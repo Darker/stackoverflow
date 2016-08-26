@@ -326,7 +326,7 @@ updateQuestionArray.update = null;
 
 function PromiseHTTPRequest(url) {
     var resolver = Promise.defer();
-    //console.log("FETCH: ", typeof url=="string"?url:url.url);
+    console.log("FETCH: ", typeof url=="string"?url:url.url);
     if(url.expectedStatus == null ) {
       url.expectedStatus = 200;
     }
