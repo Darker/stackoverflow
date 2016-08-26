@@ -10,6 +10,7 @@ String.prototype.arg = function (val) {
 }
 const view_count_refresh_period = 20*60*1000;
 const day_duration = 24*60*60*1000;
+const q_cache_delay = 60 * 60 * 1000;
 
 var acc_id = 607407;
 
@@ -19,19 +20,35 @@ var questionCache = "questions_%1.json".arg(acc_id);
 var questions = [];
 
 var question_meta = new QMeta.QuestionMetaStorage(questions);
-
-fetchAllQuestions(questionCache, 30*60*1000)
-  .then(function(question_array) {
-       console.log("RETRIEVED: "+question_array.length);
-       questions.length = 0;
-       questions.push.apply(questions, question_array);
+//297931 views
+//297942
+//298315
+//298452
+//298973
+//300596
+updateQuestionArray(questionCache, q_cache_delay, questions)
+  .then(function () {
+      console.log("Total views: ", question_meta.totalViews());
        start();
   });
 
+
+
 function start() {
     //observeTimeTag(questionByTitle("Can I add support for conditional breakpoints for custom objects?"),0,"");
-    viewQuestion(questionByTitle("Can I add support for conditional breakpoints for custom objects?"));
-    //viewAllQuestions(0);
+    /*viewQuestion(questionByTitle("Can I add support for conditional breakpoints for custom objects?"))
+      .then(function () {
+          viewQuestion(questionByTitle("Can I add support for conditional breakpoints for custom objects?"));
+      });*/
+    
+
+    setInterval(function () {
+        updateQuestionArray(questionCache, q_cache_delay, questions)
+          .then(function () {
+              console.log("Total views: ", question_meta.totalViews());
+          })
+    }, q_cache_delay);
+    viewAllQuestions(0);
 
 }
 function viewQuestion(index) {
@@ -163,7 +180,7 @@ Yes.prototype = Object.create(Decision.prototype);
 
 function QuestionFilter(index) {
     var q = questions[index];
-    if(q.view_count>999)
+    if(q.view_count>100)
         return new No("view count is too high");
     var qmeta = question_meta.i(index);
     if(!qmeta.shouldView())
@@ -248,11 +265,11 @@ function downloadAllQuestions(page, question_array) {
       question_array = [];
   }
 
-  console.log("FETCH: page "+page);
+  //console.log("FETCH: page "+page);
   return downloadQuestions(questionParams+"&page="+page)
    .then(function(reply) {
        question_array.push.apply(question_array, reply.items);
-       console.log("FETCH: received "+reply.items.length+" questions.");
+       //console.log("FETCH: received "+reply.items.length+" questions.");
        if(reply.has_more) {
            return downloadAllQuestions(page+1, question_array);
        }
@@ -292,8 +309,19 @@ function fetchAllQuestions(cacheFilename, cacheTimeout, question_array) {
           })
     }
 }
-
-
+function updateQuestionArray(cacheFilename, cacheTimeout, question_array) {
+    if (updateQuestionArray.update != null) {
+        return updateQuestionArray.update;
+    }
+    return updateQuestionArray.update = fetchAllQuestions(cacheFilename, cacheTimeout)
+      .then(function (new_array) {
+          console.log("RETRIEVED: " + new_array.length);
+          question_array.length = 0;
+          question_array.push.apply(question_array, new_array);
+          updateQuestionArray.update = null;
+      });
+}
+updateQuestionArray.update = null;
 
 
 function PromiseHTTPRequest(url) {
@@ -319,7 +347,7 @@ function PromiseHTTPRequest(url) {
 };
 function PromiseWriteFile(name, data, options, callback) {
     var resolver = Promise.defer();
-    console.log("SAVE: ", name);
+    //console.log("SAVE: ", name);
     fs.writeFile(name, data, options,
             function(error) {
                 if(error) {
@@ -334,7 +362,7 @@ function PromiseWriteFile(name, data, options, callback) {
 };
 function PromiseReadFile(name, options, callback) {
     var resolver = Promise.defer();
-    console.log("READ: ", name);
+    //console.log("READ: ", name);
     fs.readFile(name, options,
             function(err, data) {
                 if(err) {

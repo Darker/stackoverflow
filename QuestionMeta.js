@@ -23,6 +23,19 @@ QuestionMetaStorage.prototype.totalViews = function () {
     return total;
 }
 
+function delegateMethodById(obj, name) {
+    obj[name] = function(id) {
+      var args = [];
+      args.push.apply(args, arguments);
+      args.splice(0,1);
+      var obj = this.byId(id);
+      return obj[name].apply(obj, args);
+    }
+}
+delegateMethodById(QuestionMetaStorage.prototype, "shouldView");
+delegateMethodById(QuestionMetaStorage.prototype, "viewedNow");
+delegateMethodById(QuestionMetaStorage.prototype, "updateTag");
+
 function QuestionMeta(id, parent) {
     this.parent = parent;
     this.id = id;
@@ -34,11 +47,16 @@ QuestionMeta.prototype.viewedNow = function () {
     this.lastViewTime = new Date().getTime();
 }
 QuestionMeta.prototype.shouldView = function () {
-    if (this.lastViewTime < this.lastTagUpdate)
+    if (this.lastViewTime < this.lastTagUpdate) {
+        //console.log("SHOULD VIEW: last viewed before last tag update.");
         return true;
+    }
     var now = new Date().getTime();
-    if (now - this.lastTagUpdate > 14 * 60)
+    if (now - this.lastTagUpdate > 14 * 60 * 1000){
+        //console.log("SHOULD VIEW: last viewed more than 15 mins ago");
         return true;
+    }
+    //console.log("SHOULD NOT VIEW.");
     return false;
 }
 QuestionMeta.prototype.updateTag = function (tag) {
