@@ -57,12 +57,12 @@ function start() {
       });*/
     
 
-    setInterval(function () {
-        updateQuestionArray(questionCache, q_cache_delay, questions)
-          .then(function () {
-              console.log("Total views: ", question_meta.totalViews());
-          })
-    }, q_cache_delay * 1.5);
+    //setInterval(function () {
+    //    updateQuestionArray(questionCache, q_cache_delay, questions)
+    //      .then(function () {
+    //          console.log("Total views: ", question_meta.totalViews());
+    //      })
+    //}, q_cache_delay * 1.5);
     var start_index = 0;
     if (ARGS.arg_index) {
         start_index = 1 * ARGS.arg_index;
@@ -191,17 +191,19 @@ function QuestionFilter(index) {
     if (q == null) {
         return new No("question is null");
     }
-    if(q.view_count>999)
+    if(q.view_count>980)
         return new No("view count is too high");
     var qmeta = question_meta.n(index);
     if(!qmeta.shouldView())
         return new No("already viewed");
+    if (qmeta.sinceLastView() < 17 * 60 * 1000)
+        return new No("viewed recently");
     return new Yes();
 }
 function viewAllQuestions(startIndex) {
     if(typeof startIndex!="number")
       startIndex = 0;
-    var delay = 2000;  //Math.ceil(view_count_refresh_period/questions.length);
+    var delay = 1800;  //Math.ceil(view_count_refresh_period/questions.length);
 
     startIndex=wrapIndexToArray(startIndex, questions);
     var decision;
@@ -234,7 +236,8 @@ function viewAllQuestions(startIndex) {
               });
         }
     }
-    
+    if (skipCount > 0)
+        console.log("Skipped " + skipCount + " questions.");
     var startTime = new Date().getTime();
     return viewQuestion(startIndex)
       .delay(Math.max(0, delay-(new Date().getTime()-startTime)))
