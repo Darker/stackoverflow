@@ -4,13 +4,16 @@ const fs = require('fs');
 Promise.promisifyAll(fs);
 const cookie = require("cookie");
 const QMeta = require("./QuestionMeta");
+const Identifier = require("./Identifier");
+const Arguments = require("./SimpleArgv");
+const ARGS = new Arguments();
 
 String.prototype.arg = function (val) {
     return this.replace(/%[0-9]/, val);
 }
 const view_count_refresh_period = 20*60*1000;
 const day_duration = 24*60*60*1000;
-const q_cache_delay = 60 * 60 * 1000;
+const q_cache_delay = 40 * 60 * 1000;
 
 var acc_id = 607407;
 
@@ -26,13 +29,25 @@ var question_meta = new QMeta.QuestionMetaStorage(questions);
 //298452
 //298973
 //300596
+//303208
 updateQuestionArray(questionCache, q_cache_delay, questions)
   .then(function () {
       console.log("Total views: ", question_meta.totalViews());
-       start();
+      //PromiseWriteFile("test_sorted.json", toDebugJSON(questions))
+      //    .then(function () { });
+      //question_meta.print("title");
+      start();
   });
-
-
+function question_sorter(a, b) {
+    //console.log(a.title + "(" + a.view_count + ") > " + b.title + "(" + b.view_count + ")")
+    return a.view_count - b.view_count;
+}
+function toDebugJSON(array) {
+    var filtered = question_meta.filter.call({qdb: array}, ["view_count", "title", "question_id"]);
+    var string = JSON.stringify(filtered);
+    string = string.replace(/\},/g, "},\n");
+    return string;
+}
 
 function start() {
     //observeTimeTag(questionByTitle("Can I add support for conditional breakpoints for custom objects?"),0,"");
@@ -47,55 +62,81 @@ function start() {
           .then(function () {
               console.log("Total views: ", question_meta.totalViews());
           })
-    }, q_cache_delay);
-    viewAllQuestions(0);
-
+    }, q_cache_delay * 1.5);
+    var start_index = 0;
+    if (ARGS.arg_index) {
+        start_index = 1 * ARGS.arg_index;
+    }
+    else if (ARGS.arg_title) {
+        start_index = questionByTitle(ARGS.arg_title);
+    }
+    var q = questions[start_index];
+    console.log("Start: #" + start_index + " '" + q.title + "' (id " + q.question_id + ")");
+    viewAllQuestions(start_index);
 }
-function viewQuestion(index) {
-  const viewRegex = /\/posts\/(\d+)\/ivc\/([\da-z]+)/i;
-  var q = questions[index];
-  console.log("VIEW Q: "+q.title);
-  var url = q.link;
+function viewQuestion(identifier) {
+    identifier = Identifier.fromValue(identifier);
+    var q = question_meta.question(identifier);
+    console.log("VIEW: " + q.title);
 
-  return PromiseHTTPRequest({url:url})
-    .then(function(result) {
-        var match = viewRegex.exec(result.body);
-        //console.log("Headers: ");
-        //for(var i in result.response.headers) {
-        //   console.log("        "+i+" => "+result.response.headers[i]);
-        //}
-        var cookies = result.response.headers["set-cookie"]+"";
-        cookies = cookies.substr(0, cookies.indexOf(";"));
-        //console.log("Cookies: "+cookies);
-
-        //console.log(match);
-        if (match != null && match.length >= 3) {
-            var meta = question_meta.i(q.question_id);
-            meta.updateTag(match[2]);
-            
-            if(meta.shouldView()) {
-                return PromiseHTTPRequest({
-                  url:"http://stackoverflow.com/posts/" + match[1] + "/ivc/" + match[2],
+    return getTimeTag(identifier)
+      .then(function (results) {
+          var meta = question_meta.meta(identifier);
+          //console.log(meta, identifier);
+          if (meta.shouldView()) {
+              return PromiseHTTPRequest({
+                  url: results.link,
                   expectedStatus: 204,
                   headers: {
                       'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:47.0) Gecko/20100101 Firefox/47.0',
                       'X-Requested-With': "XMLHttpRequest",
-                      "Cookie": cookies,
-                      "Referer": url
+                      "Cookie": results.cookie,
+                      "Referer": results.question.link
                   }
-                })
-                .then(function() {
-                     meta.viewedNow();
-                });
-            }
-            else {
-                console.log("VIEW SKIP: "+q.title+" (viewed recently)");
-                return true;
-            }
-        }
-        else 
-            throw new Error("Failed to find markers for view counter!");
-    });
+              })
+              .then(function () {
+                  meta.viewedNow();
+                  return true;
+              });
+          }
+          else {
+              console.log("VIEW SKIP: " + q.title + " (viewed recently)");
+              return false;
+          }
+      })
+}
+function getTimeTag(identifier) {
+    const viewRegex = /\/posts\/(\d+)\/ivc\/([\da-z]+)/i;
+    identifier = Identifier.fromValue(identifier);
+    var q = question_meta.question(identifier);
+    var url = q.link;
+
+    return PromiseHTTPRequest({ url: url })
+      .then(function (result) {
+          var match = viewRegex.exec(result.body);
+          //console.log("Headers: ");
+          //for(var i in result.response.headers) {
+          //   console.log("        "+i+" => "+result.response.headers[i]);
+          //}
+
+          //console.log("Cookies: "+cookies);
+          //console.log(match);
+          if (match != null && match.length >= 3) {
+              var cookies = result.response.headers["set-cookie"] + "";
+              cookies = cookies.substr(0, cookies.indexOf(";"));
+              question_meta.updateTag(match[2]);
+              //console.log("TAG: " + match[2]);
+              return {
+                  tag: match[2],
+                  cookie: cookies,
+                  link: "http://stackoverflow.com/posts/" + match[1] + "/ivc/" + match[2],
+                  question: q,
+                  q_id: q.question_id
+              };
+          }
+          else
+              throw new Error("Failed to find markers for view counter!");
+      });
 }
 /*
 VALUE CHANGED FROM  TO 9be6
@@ -106,40 +147,6 @@ DELAY 844460
 VALUE 10:59:50
 */
 
-function observeTimeTag(index, lastChange, lastValue) {
-  const viewRegex = /\/posts\/(\d+)\/ivc\/([\da-z]+)/i;
-  var q = questions[index];
-  //console.log("VIEW Q: "+q.title);
-  var url = q.link;
-
-  return PromiseHTTPRequest({url:url})
-    .then(function(result) {
-        var match = viewRegex.exec(result.body);
-
-        //console.log(match);
-        if (match != null && match.length >= 3) {
-            var time = new Date().getTime();
-            time/=1000;
-            if(lastValue!=match[2]) {
-              console.log("VALUE CHANGED FROM "+lastValue+" TO "+match[2]);
-              console.log("DELAY "+Math.round(time-lastChange)+ " (now="+Math.round(time)+")");
-              console.log("VALUE "+timeTagToTime(match[2]));
-              // There was already a change
-              lastChange = time;
-              lastValue = match[2];
-  
-            }
-            Promise.delay(10000)
-              .then(()=>{return observeTimeTag(index, lastChange, lastValue);});
-        }
-        else 
-            throw new Error("Failed to find markers for view counter!");
-    })
-    .catch(function(error) {
-         console.log("ERROR: "+error);
-         return observeTimeTag(index, lastChange, lastValue);
-    });
-}
 function timeTagToTime(tag) {
     var time = parseInt(tag, 16);
     return new TimeObj(time);
@@ -158,6 +165,7 @@ TimeObj.prototype.s = 0;
 TimeObj.prototype.toString = function() {
     return this.h+":"+this.m+":"+this.s;
 }
+
 function Decision(value, reason) {
     this.value = !!value;
     this.reason = reason+"";
@@ -180,9 +188,12 @@ Yes.prototype = Object.create(Decision.prototype);
 
 function QuestionFilter(index) {
     var q = questions[index];
-    if(q.view_count>100)
+    if (q == null) {
+        return new No("question is null");
+    }
+    if(q.view_count>999)
         return new No("view count is too high");
-    var qmeta = question_meta.i(index);
+    var qmeta = question_meta.n(index);
     if(!qmeta.shouldView())
         return new No("already viewed");
     return new Yes();
@@ -194,23 +205,51 @@ function viewAllQuestions(startIndex) {
 
     startIndex=wrapIndexToArray(startIndex, questions);
     var decision;
+    var skipCount = 0;
+    var lastTimeTag = question_meta.timeTag;
     // Skip question if it was viewed recently
     while((decision = QuestionFilter(startIndex)).no()) {
         //console.log("Skip "+startIndex+" because "+decision.reason);
-        qmeta = question_meta.i(++startIndex);
-        startIndex=wrapIndexToArray(startIndex, questions);
+        qmeta = question_meta.n(startIndex=wrapIndexToArray(startIndex+1, questions));
+        skipCount++;
+        if (skipCount >= questions.length) {
+            console.log("Skipped too many questions, waiting for update of tag " + lastTimeTag + ". Last reason: " + decision.reason);
+            return Promise.delay(1000)
+              .then(function () {
+                  return getTimeTag(startIndex)
+                    .then(function (results) {
+                        //console.log("TAG LOADED!", results);
+                        if (results.tag != lastTimeTag) {
+                            return;
+                        }
+                        else {
+                            console.log("    ... tag unchanged");
+                            return Promise.delay(5000);
+                        }
+                    })
+              })
+              .then(function () {
+                  console.log("Restarting view loop!");
+                  viewAllQuestions(startIndex);
+              });
+        }
     }
     
-
+    var startTime = new Date().getTime();
     return viewQuestion(startIndex)
-      .delay(delay)
+      .delay(Math.max(0, delay-(new Date().getTime()-startTime)))
       .catch(function(error) {
            console.log("VIEW ERROR: "+error);
            return viewAllQuestions(startIndex);
       })
       .then(function() {
            startIndex++;
-           startIndex=wrapIndexToArray(startIndex, questions);
+           startIndex = wrapIndexToArray(startIndex, questions);
+           if (lastTimeTag != question_meta.timeTag && lastTimeTag!="") {
+               console.log("New time tag " + question_meta.timeTag + " - starting over! (old="+lastTimeTag+")");
+               startIndex = 0;
+           }
+               
            return viewAllQuestions(startIndex);
       });
 }
@@ -318,7 +357,13 @@ function updateQuestionArray(cacheFilename, cacheTimeout, question_array) {
           console.log("RETRIEVED: " + new_array.length);
           question_array.length = 0;
           question_array.push.apply(question_array, new_array);
+
+          //PromiseWriteFile("test.json", JSON.stringify(new QMeta.QuestionMetaStorage(question_array).filter(["view_count", "title", "question_id"]))).then(function () { });
+          //console.log("SORT!");
+          question_array.sort(question_sorter);
+
           updateQuestionArray.update = null;
+          return question_array;
       });
 }
 updateQuestionArray.update = null;
@@ -326,7 +371,7 @@ updateQuestionArray.update = null;
 
 function PromiseHTTPRequest(url) {
     var resolver = Promise.defer();
-    console.log("FETCH: ", typeof url=="string"?url:url.url);
+    //console.log("FETCH: ", typeof url=="string"?url:url.url);
     if(url.expectedStatus == null ) {
       url.expectedStatus = 200;
     }
