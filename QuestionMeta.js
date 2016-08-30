@@ -117,6 +117,9 @@ function QuestionMeta(id, parent) {
 QuestionMeta.prototype.viewedNow = function () {
     this.lastViewTime = new Date().getTime();
 }
+QuestionMeta.prototype.sinceLastView = function () {
+    return new Date().getTime() - this.lastViewTime;
+}
 QuestionMeta.prototype.shouldView = function () {
     if (this.lastViewTime < this.parent.lastTagUpdate) {
         //console.log("SHOULD VIEW: last viewed before last tag update.");
@@ -130,6 +133,7 @@ QuestionMeta.prototype.shouldView = function () {
     //console.log("SHOULD NOT VIEW.");
     return false;
 }
+
 
 module.exports = {
     QuestionMetaStorage: QuestionMetaStorage,
