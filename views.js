@@ -191,7 +191,7 @@ function QuestionFilter(index) {
     if (q == null) {
         return new No("question is null");
     }
-    if(q.view_count>980)
+    if(q.view_count>970)
         return new No("view count is too high");
     var qmeta = question_meta.n(index);
     if(!qmeta.shouldView())
