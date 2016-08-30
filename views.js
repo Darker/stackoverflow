@@ -30,6 +30,8 @@ var question_meta = new QMeta.QuestionMetaStorage(questions);
 //298973
 //300596
 //303208
+//348170
+
 updateQuestionArray(questionCache, q_cache_delay, questions)
   .then(function () {
       console.log("Total views: ", question_meta.totalViews());
@@ -57,12 +59,12 @@ function start() {
       });*/
     
 
-    //setInterval(function () {
-    //    updateQuestionArray(questionCache, q_cache_delay, questions)
-    //      .then(function () {
-    //          console.log("Total views: ", question_meta.totalViews());
-    //      })
-    //}, q_cache_delay * 1.5);
+    setInterval(function () {
+        updateQuestionArray(questionCache, q_cache_delay, questions)
+          .then(function () {
+              console.log("Total views: ", question_meta.totalViews());
+          })
+    }, q_cache_delay * 1.5);
     var start_index = 0;
     if (ARGS.arg_index) {
         start_index = 1 * ARGS.arg_index;
@@ -312,13 +314,16 @@ function downloadAllQuestions(page, question_array) {
    .then(function(reply) {
        question_array.push.apply(question_array, reply.items);
        //console.log("FETCH: received "+reply.items.length+" questions.");
+       if(reply.quota_remaining < 10) {
+           throw new Error("Exceeded max number of requests!");
+       }
        if(reply.has_more) {
            return downloadAllQuestions(page+1, question_array);
        }
        else {
            return question_array;
        }
-    })
+    });
 }
 
 function fetchAllQuestions(cacheFilename, cacheTimeout, question_array) {
@@ -340,8 +345,14 @@ function fetchAllQuestions(cacheFilename, cacheTimeout, question_array) {
             return question_array;
           });
     }
+    else if(cacheTimeout==Infinity) {
+        throw new Error("Networkless mode failed, file not available!");
+    }
     else {
         return downloadAllQuestions(1, question_array)
+          .catch(function(error) {
+              return fetchAllQuestions(cacheFilename, Infinity, question_array);
+          })
           .then(function(question_array){
             return PromiseWriteFile(cacheFilename, JSON.stringify(question_array))
               .then(function() {return question_array;});
@@ -356,6 +367,12 @@ function updateQuestionArray(cacheFilename, cacheTimeout, question_array) {
         return updateQuestionArray.update;
     }
     return updateQuestionArray.update = fetchAllQuestions(cacheFilename, cacheTimeout)
+      .catch(function(error) {
+           // If array not empty, we can return it
+           if(question_array.length > 0)
+               return question_array;
+           throw new Error("Cannot fetch the questions.");
+      })
       .then(function (new_array) {
           console.log("RETRIEVED: " + new_array.length);
           question_array.length = 0;
