@@ -193,7 +193,7 @@ function QuestionFilter(index) {
     if (q == null) {
         return new No("question is null");
     }
-    if(q.view_count>970)
+    if(q.view_count>950)
         return new No("view count is too high");
     var qmeta = question_meta.n(index);
     if(!qmeta.shouldView())
@@ -202,7 +202,7 @@ function QuestionFilter(index) {
         return new No("viewed recently");
     return new Yes();
 }
-function viewAllQuestions(startIndex) {
+function viewAllQuestions(startIndex, lastError) {
     if(typeof startIndex!="number")
       startIndex = 0;
     var delay = 1800;  //Math.ceil(view_count_refresh_period/questions.length);
@@ -243,9 +243,13 @@ function viewAllQuestions(startIndex) {
     var startTime = new Date().getTime();
     return viewQuestion(startIndex)
       .delay(Math.max(0, delay-(new Date().getTime()-startTime)))
-      .catch(function(error) {
-           console.log("VIEW ERROR: "+error);
-           return viewAllQuestions(startIndex);
+      .catch(function (error) {
+           if(typeof lastError!="object" || lastError.message!=error.message)
+               console.log("VIEW ERROR: "+error);
+           return Promise.delay(1000)
+             .then(function () {
+                 return viewAllQuestions(startIndex, error);
+             });
       })
       .then(function() {
            startIndex++;
