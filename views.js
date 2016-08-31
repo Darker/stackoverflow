@@ -62,6 +62,7 @@ function start() {
     setInterval(function () {
         updateQuestionArray(questionCache, q_cache_delay, questions)
           .then(function () {
+              question_meta.update(questions);
               console.log("Total views: ", question_meta.totalViews());
           })
     }, q_cache_delay * 1.5);
@@ -193,13 +194,15 @@ function QuestionFilter(index) {
     if (q == null) {
         return new No("question is null");
     }
-    if(q.view_count>950)
+    if(q.view_count>960)
         return new No("view count is too high");
     var qmeta = question_meta.n(index);
+    if(qmeta.view_count>980)
+        return new No("assumed too many views");
     if(!qmeta.shouldView())
         return new No("already viewed");
-    if (qmeta.sinceLastView() < 17 * 60 * 1000)
-        return new No("viewed recently");
+    //if (qmeta.sinceLastView() < 17 * 60 * 1000)
+    //    return new No("viewed recently");
     return new Yes();
 }
 function viewAllQuestions(startIndex, lastError) {
@@ -210,12 +213,15 @@ function viewAllQuestions(startIndex, lastError) {
     startIndex=wrapIndexToArray(startIndex, questions);
     var decision;
     var skipCount = 0;
+    var skipReasons = [];
     var lastTimeTag = question_meta.timeTag;
     // Skip question if it was viewed recently
     while((decision = QuestionFilter(startIndex)).no()) {
         //console.log("Skip "+startIndex+" because "+decision.reason);
         qmeta = question_meta.n(startIndex=wrapIndexToArray(startIndex+1, questions));
         skipCount++;
+        if(skipReasons.indexOf(decision.reason) == -1)
+          skipReasons.push(decision.reason);
         if (skipCount >= questions.length) {
             console.log("Skipped too many questions, waiting for update of tag " + lastTimeTag + ". Last reason: " + decision.reason);
             return Promise.delay(1000)
@@ -238,8 +244,20 @@ function viewAllQuestions(startIndex, lastError) {
               });
         }
     }
-    if (skipCount > 0)
-        console.log("Skipped " + skipCount + " questions.");
+    if (skipCount > 1) {
+      var reasons = "";
+      if(skipReasons.length==1) {
+          reasons = "because "+skipReasons[0]+".";
+      }
+      else {
+          reasons = "for the following reasons "+skipReasons.join(", ")+".";
+      }
+      console.log("Skipped " + skipCount + " questions "+reasons);
+    }
+    else if(skipCount == 1) {
+      console.log("Skipped question because "+skipReasons[0]+".");
+    }
+        
     var startTime = new Date().getTime();
     return viewQuestion(startIndex)
       .delay(Math.max(0, delay-(new Date().getTime()-startTime)))

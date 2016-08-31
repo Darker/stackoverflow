@@ -51,6 +51,16 @@ QuestionMetaStorage.prototype.meta = function (selector) {
     console.log("BAD SELECTOR: ", selector);
     throw new Error("Invalid question identifier passed!");
 }
+QuestionMetaStorage.prototype.update = function(newQuestionArray) {
+    this.qdb = newQuestionArray;
+    for (var i in this.store)
+    {
+        var meta = this.store[i];
+        if(meta instanceof QuestionMeta) {
+            meta.update();
+        }
+    }
+}
 QuestionMetaStorage.prototype.indexById = function(id) {
     return this.qdb.findIndex(function(x){return x.question_id == id;});
 }
@@ -113,9 +123,14 @@ function QuestionMeta(id, parent) {
     this.question_id = id;
     this.lastViewTime = 0;
     this.tag = "";
+    this.view_count = 0;
 }
 QuestionMeta.prototype.viewedNow = function () {
     this.lastViewTime = new Date().getTime();
+    this.view_count++;
+}
+QuestionMeta.prototype.updateRealViews = function (){
+    this.view_count = this.parent.question(this).view_count;
 }
 QuestionMeta.prototype.sinceLastView = function () {
     return new Date().getTime() - this.lastViewTime;
@@ -133,7 +148,9 @@ QuestionMeta.prototype.shouldView = function () {
     //console.log("SHOULD NOT VIEW.");
     return false;
 }
-
+QuestionMeta.prototype.update = function () {
+    this.updateRealViews();
+}
 
 module.exports = {
     QuestionMetaStorage: QuestionMetaStorage,
