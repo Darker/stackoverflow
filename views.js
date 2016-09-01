@@ -318,10 +318,6 @@ function downloadQuestions(params) {
       var questions = JSON.parse(result.body);
       return questions;
   })
-  .catch(function(error) {
-      console.error(error);
-      return [];
-  })
 }
 
 function downloadAllQuestions(page, question_array) {
@@ -371,11 +367,12 @@ function fetchAllQuestions(cacheFilename, cacheTimeout, question_array) {
         throw new Error("Networkless mode failed, file not available!");
     }
     else {
-        return downloadAllQuestions(1, question_array)
+        return downloadAllQuestions(1)
           .catch(function(error) {
               return fetchAllQuestions(cacheFilename, Infinity, question_array);
           })
-          .then(function(question_array){
+          .then(function(data){
+            question_array.push.apply(question_array, data);
             return PromiseWriteFile(cacheFilename, JSON.stringify(question_array))
               .then(function() {return question_array;});
           })
