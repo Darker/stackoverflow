@@ -73,6 +73,8 @@ function start() {
               console.log("Total views: ", question_meta.totalViews());
           })
     }, q_cache_delay * 1.5);
+
+
     var start_index = 0;
     if (ARGS.arg_index) {
         start_index = 1 * ARGS.arg_index;
@@ -415,12 +417,13 @@ function updateQuestionArray(cacheFilename, cacheTimeout, question_array) {
           var return_val = question_array;
           if (new_array instanceof Array) {
               console.log("RETRIEVED: " + new_array.length);
-              question_array.length = 0;
-              question_array.push.apply(question_array, new_array);
-
+              if (new_array != question_array) {
+                  question_array.length = 0;
+                  question_array.push.apply(question_array, new_array);
+                  question_array.sort(question_sorter);
+              }
               //PromiseWriteFile("test.json", JSON.stringify(new QMeta.QuestionMetaStorage(question_array).filter(["view_count", "title", "question_id"]))).then(function () { });
               //console.log("SORT!");
-              question_array.sort(question_sorter);
           }
           else {
               return_val = false;
@@ -438,7 +441,7 @@ function fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array) {
     return fetchAllQuestions(cacheFilename, cacheTimeout, tmp_array)
           .catch(function (error) {
               // If array not empty, we can return it
-              if (question_array!=null && question_array.length > 0) {
+              if (question_array != null && question_array.length > 0) {
                   console.error("ERROR: Update failed, keeping old data.");
                   return question_array;
               }
@@ -448,6 +451,12 @@ function fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array) {
                 .then(function () {
                     return fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array);
                 });
+          })
+          .then(function (result) {
+              if (result instanceof Array)
+                  return result;
+              else
+                  return question_array;
           });
 }
 
