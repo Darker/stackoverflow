@@ -11,9 +11,9 @@ const ARGS = new Arguments();
 String.prototype.arg = function (val) {
     return this.replace(/%[0-9]/, val);
 }
-const view_count_refresh_period = 20*60*1000;
+const view_count_refresh_period = 16*60*1000;
 const day_duration = 24*60*60*1000;
-const q_cache_delay = 40 * 60 * 1000;
+const q_cache_delay = 50 * 60 * 1000;
 
 var acc_id = 607407;
 
@@ -33,8 +33,10 @@ var question_meta = new QMeta.QuestionMetaStorage(questions);
 //348170
 
 updateQuestionArray(questionCache, q_cache_delay, questions)
-  .then(function () {
+  .then(function (result) {
       console.log("Total views: ", question_meta.totalViews());
+      if(result instanceof Array)
+          question_meta.update();
       //PromiseWriteFile("test_sorted.json", toDebugJSON(questions))
       //    .then(function () { });
       //question_meta.print("title");
@@ -43,6 +45,11 @@ updateQuestionArray(questionCache, q_cache_delay, questions)
 function question_sorter(a, b) {
     //console.log(a.title + "(" + a.view_count + ") > " + b.title + "(" + b.view_count + ")")
     return a.view_count - b.view_count;
+}
+function question_sorter_meta(a, b) {
+    var a_meta = question_meta.meta(new Identifier.Id(a.question_id));
+    var b_meta = question_meta.meta(new Identifier.Id(b.question_id));
+    return a_meta.view_count - b_meta.view_count;
 }
 function toDebugJSON(array) {
     var filtered = question_meta.filter.call({qdb: array}, ["view_count", "title", "question_id"]);
@@ -60,7 +67,7 @@ function start() {
     
 
     setInterval(function () {
-        updateQuestionArray(questionCache, q_cache_delay, questions)
+        updateQuestionArray(questionCache, -1, questions)
           .then(function () {
               question_meta.update(questions);
               console.log("Total views: ", question_meta.totalViews());
@@ -80,7 +87,8 @@ function start() {
 function viewQuestion(identifier) {
     identifier = Identifier.fromValue(identifier);
     var q = question_meta.question(identifier);
-    console.log("VIEW: " + q.title);
+    var meta = question_meta.meta(identifier);
+    console.log("VIEW: " + q.title.substr(0, 15)+"... "+meta.view_count+" views");
 
     return getTimeTag(identifier)
       .then(function (results) {
@@ -209,6 +217,12 @@ function viewAllQuestions(startIndex, lastError) {
     if(typeof startIndex!="number")
       startIndex = 0;
     var delay = 1800;  //Math.ceil(view_count_refresh_period/questions.length);
+    // Ocassionally sort the array
+    if (startIndex == 0) {
+        questions.sort(question_sorter_meta);
+        //question_meta.update();
+    }
+
 
     startIndex=wrapIndexToArray(startIndex, questions);
     var decision;
@@ -312,12 +326,13 @@ function wrapIndexToArray(i, array) {
 
 
 function downloadQuestions(params) {
-  return PromiseHTTPRequest({ url: user_questions.arg(acc_id)+params,
-                  gzip: true })
-  .then(function(result) {
-      var questions = JSON.parse(result.body);
-      return questions;
-  })
+    //return new Promise(function () { throw new Error("DUMMY ERROR"); });
+    return PromiseHTTPRequest({ url: user_questions.arg(acc_id)+params,
+                    gzip: true })
+    .then(function(result) {
+        var questions = JSON.parse(result.body);
+        return questions;
+    })
 }
 
 function downloadAllQuestions(page, question_array) {
@@ -332,7 +347,7 @@ function downloadAllQuestions(page, question_array) {
    .then(function(reply) {
        question_array.push.apply(question_array, reply.items);
        //console.log("FETCH: received "+reply.items.length+" questions.");
-       if(reply.quota_remaining < 10) {
+       if(reply.quota_remaining*1 < 10) {
            throw new Error("Exceeded max number of requests!");
        }
        if(reply.has_more) {
@@ -348,36 +363,46 @@ function fetchAllQuestions(cacheFilename, cacheTimeout, question_array) {
     if(!(question_array instanceof Array)) {
         question_array = [];
     }
-
+    var stat;
     try {
-      var stat = fs.statSync(cacheFilename);
+      stat = fs.statSync(cacheFilename);
     }
     catch(e) {
-      var stat = null;
+      stat = null;
     }
 
-    if(stat !=null && stat.isFile() && (new Date().getTime() - stat.mtime.getTime()) < cacheTimeout) {
+    if (stat != null && stat.isFile() && (new Date().getTime() - stat.mtime.getTime()) < cacheTimeout) {
+        console.log("Loading from file...");
         return PromiseReadFile(cacheFilename)
-          .then(function(data){
-            question_array.push.apply(question_array, JSON.parse(data));
-            return question_array;
+          .then(function (data) {
+              question_array.length = 0;
+              question_array.push.apply(question_array, JSON.parse(data));
+              return question_array;
           });
     }
-    else if(cacheTimeout==Infinity) {
+    else if (cacheTimeout == Infinity) {
         throw new Error("Networkless mode failed, file not available!");
     }
     else {
+        console.log("Loading from network...");
         return downloadAllQuestions(1)
-          .catch(function(error) {
-              return fetchAllQuestions(cacheFilename, Infinity, question_array);
+          .catch(function (error) {
+              console.log("ERROR (will retry cache): " + error);
+              if (cacheTimeout >= 0)
+                  return fetchAllQuestions(cacheFilename, Infinity, question_array);
+              else {
+                  console.log("Load from file disabled, returning false.");
+                  return false;
+              }
           })
-          .then(function(data){
-            question_array.push.apply(question_array, data);
-            return PromiseWriteFile(cacheFilename, JSON.stringify(question_array))
-              .then(function() {return question_array;});
+          .then(function (data) {
+              question_array.length = 0;
+              question_array.push.apply(question_array, data);
+              return PromiseWriteFile(cacheFilename, JSON.stringify(question_array))
+                .then(function() {return question_array;});
           })
           .then(function(question_array){
-            return question_array;
+              return question_array;
           })
     }
 }
@@ -385,27 +410,46 @@ function updateQuestionArray(cacheFilename, cacheTimeout, question_array) {
     if (updateQuestionArray.update != null) {
         return updateQuestionArray.update;
     }
-    return updateQuestionArray.update = fetchAllQuestions(cacheFilename, cacheTimeout)
-      .catch(function(error) {
-           // If array not empty, we can return it
-           if(question_array.length > 0)
-               return question_array;
-           throw new Error("Cannot fetch the questions.");
-      })
+    return updateQuestionArray.update = fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array)
       .then(function (new_array) {
-          console.log("RETRIEVED: " + new_array.length);
-          question_array.length = 0;
-          question_array.push.apply(question_array, new_array);
+          var return_val = question_array;
+          if (new_array instanceof Array) {
+              console.log("RETRIEVED: " + new_array.length);
+              question_array.length = 0;
+              question_array.push.apply(question_array, new_array);
 
-          //PromiseWriteFile("test.json", JSON.stringify(new QMeta.QuestionMetaStorage(question_array).filter(["view_count", "title", "question_id"]))).then(function () { });
-          //console.log("SORT!");
-          question_array.sort(question_sorter);
-
+              //PromiseWriteFile("test.json", JSON.stringify(new QMeta.QuestionMetaStorage(question_array).filter(["view_count", "title", "question_id"]))).then(function () { });
+              //console.log("SORT!");
+              question_array.sort(question_sorter);
+          }
+          else {
+              return_val = false;
+          }
           updateQuestionArray.update = null;
-          return question_array;
+          return return_val;
       });
 }
 updateQuestionArray.update = null;
+// Loop for fetching questions
+// loops infinitelly untill it succeeds 
+// Provide original array and it returns it after failure instead of looping
+function fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array) {
+    var tmp_array = [];
+    return fetchAllQuestions(cacheFilename, cacheTimeout, tmp_array)
+          .catch(function (error) {
+              // If array not empty, we can return it
+              if (question_array!=null && question_array.length > 0) {
+                  console.error("ERROR: Update failed, keeping old data.");
+                  return question_array;
+              }
+
+              console.error("ERROR: Update failed, retry in 10 seconds.");
+              return Promise.delay(10 * 1000)
+                .then(function () {
+                    return fetchAllQuestionsSafe(cacheFilename, cacheTimeout, question_array);
+                });
+          });
+}
 
 
 function PromiseHTTPRequest(url) {
@@ -446,7 +490,7 @@ function PromiseWriteFile(name, data, options, callback) {
 };
 function PromiseReadFile(name, options, callback) {
     var resolver = Promise.defer();
-    //console.log("READ: ", name);
+    console.log("READ: ", name);
     fs.readFile(name, options,
             function(err, data) {
                 if(err) {

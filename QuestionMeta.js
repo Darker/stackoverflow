@@ -4,6 +4,7 @@ function QuestionMetaStorage(db) {
     this.qdb = db;
     this.timeTag = "";
     this.lastTagUpdate = 0;
+    this.lastSort = 0;
 }
 QuestionMetaStorage.prototype.byId = function (id) {
     return this.store[id]||(this.store[id] = new QuestionMeta(id, this));
@@ -51,8 +52,9 @@ QuestionMetaStorage.prototype.meta = function (selector) {
     console.log("BAD SELECTOR: ", selector);
     throw new Error("Invalid question identifier passed!");
 }
-QuestionMetaStorage.prototype.update = function(newQuestionArray) {
-    this.qdb = newQuestionArray;
+QuestionMetaStorage.prototype.update = function (newQuestionArray) {
+    if(newQuestionArray instanceof Array)
+        this.qdb = newQuestionArray;
     for (var i in this.store)
     {
         var meta = this.store[i];
@@ -123,14 +125,22 @@ function QuestionMeta(id, parent) {
     this.question_id = id;
     this.lastViewTime = 0;
     this.tag = "";
-    this.view_count = 0;
+    this._view_count = -1;
 }
+Object.defineProperty(QuestionMeta.prototype, "view_count", {
+    get: function(){
+        if (this._view_count < 0) {
+            this.updateRealViews();
+        }
+        return this._view_count;
+    }
+})
 QuestionMeta.prototype.viewedNow = function () {
     this.lastViewTime = new Date().getTime();
-    this.view_count++;
+    this._view_count++;
 }
 QuestionMeta.prototype.updateRealViews = function (){
-    this.view_count = this.parent.question(this).view_count;
+    this._view_count = this.parent.question(this).view_count;
 }
 QuestionMeta.prototype.sinceLastView = function () {
     return new Date().getTime() - this.lastViewTime;
@@ -145,13 +155,16 @@ QuestionMeta.prototype.shouldView = function () {
         //console.log("SHOULD VIEW: last viewed more than 15 mins ago");
         return true;
     }
-    //console.log("SHOULD NOT VIEW.");
+    console.log("#"+this.question_id+" NOT VIEW (v="+niceTime(this.lastViewTime)+", tag="+niceTime(this.parent.lastTagUpdate));
     return false;
 }
 QuestionMeta.prototype.update = function () {
     this.updateRealViews();
 }
-
+function niceTime(t) {
+    var date = new Date(t);
+    return date.getHours()+":"+date.getMinutes()+":"+date.getSeconds();
+}
 module.exports = {
     QuestionMetaStorage: QuestionMetaStorage,
     QuestionMeta: QuestionMeta
