@@ -1,3 +1,5 @@
+// do not modify
+// originally from sobot project
 function Arguments(proc) {
     if (typeof proc == "object") {
         this.process = proc;
